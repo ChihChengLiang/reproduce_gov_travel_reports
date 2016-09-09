@@ -1,0 +1,158 @@
+---
+title: "探索公務出國報告"
+author: "Chin-Cheng Liang"
+date: "September 6, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  cache = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width=10)
+```
+
+在丁新一建立起網站之後，更多人注意到了公務出國報告這個專案。我想進一步讓有興趣參與者，能夠快速上手分析資料，因此重製王宏恩菜市場政治學的文章： [在爬完近六萬筆的公務出國報告後，我們發現什麼趨勢？](http://whogovernstw.org/2016/09/01/austinwang18/) 。
+
+另外，王宏恩也提出了許多有趣的 [研究方向](https://g0v.hackpad.com/E0G6gZDQ2ZZ#:h=統計資料可以進行的研究(想到什麼就打什麼)-0821) ，歡迎接力做下去。
+
+若有任何重製上的困難可開 issue ，我會回覆您。若是程式碼的問題請在 issue 中附上錯誤訊息以及系統資訊 sessionInfo 如下：
+
+```{r sessionInfo}
+sessionInfo()
+```
+
+若有更好的修改，懇請惠賜 PR ！
+
+在開始前，請先確認安裝了所有套件
+
+```{r libraries}
+# install.packages("devtools")
+# devtools::install_github("ChihChengLiang/abroadplayr")
+library(abroadplayr) 
+library(dplyr)
+library(lubridate)
+library(magrittr)
+library(ggplot2)
+```
+
+# 整理資料
+
+[abroadplayr](https://github.com/ChihChengLiang/abroadplayr) 套件已把近五萬筆的資料包在 reports 這個 Dataframe 中，可直接取用。但為了後面的分析，還需做一點小小的處理。
+
+```{r data_cleansing}
+reports_clean <- reports %>%
+  tbl_df %>%
+  mutate_each(funs(ymd), report_date, start_date, end_date) %>%
+  mutate(
+    report_year = year(report_date),
+    start_month = month(start_date),
+    central_or_municipal =
+      if_else(gov=="中央政府", "Central", "Municipal")
+    )
+reports_clean %>% glimpse()
+```
+
+# 每年有多少公務出國呢？
+
+```{r annually}
+reports_clean %>%
+  count(report_year) %>%
+  filter(report_year<= 2016 & !is.na(report_year)) %>%
+  ggplot(aes(x=report_year, y=n)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Annually Number of Travels")
+```
+
+# 中央政府與地方政府的比例
+
+```{r central_or_municipal}
+reports_clean %>%
+  count(report_year, central_or_municipal) %>%
+  ggplot(aes(x=report_year, y=n, fill=central_or_municipal)) +
+  geom_bar(stat="identity", position = "dodge") +
+  ggtitle("Number of Travels by Central or Municipal") +
+  theme(legend.position="bottom")
+```
+
+# 出國目的類別
+
+```{r topics}
+topic_count <- reports_clean %>%
+  count(topic_cat, sort = T) %>%
+  filter(topic_cat!="")
+
+topic_count %>% 
+  ggplot(aes(x= topic_cat, y= n)) +
+  geom_bar(stat="identity") +
+  scale_x_discrete(limits=topic_count$topic_cat)+
+  theme(
+    text = element_text(family = "STHeiti"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+    )
+```
+
+# 次數最高類別的年趨勢
+
+```{r topic_detail}
+top_categories <- topic_count$topic_cat[1:6]
+reports_clean %>%
+  filter(topic_cat %in% top_categories) %>%
+  count(topic_cat, report_year) %>%
+  ungroup %>%
+  mutate(topic_cat = factor(topic_cat, levels = top_categories)) %>%
+  ggplot(aes(x = report_year, y = n, topic_cat)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~topic_cat) +
+  theme(text = element_text(family = "STHeiti"))
+```
+
+# 去美國和去中國的
+
+```{r usa_travel}
+plot_number_of_travels_to <- function(area) reports_clean %>%
+  filter(area==area) %>%
+  count(report_year) %>%
+  filter(report_year<= 2016 & !is.na(report_year)) %>%
+  ggplot(aes(x=report_year, y=n)) +
+  geom_bar(stat = "identity") +
+  theme(text = element_text(family = "STHeiti")) +
+  ggtitle(paste0("出訪", area,"次數"))
+
+plot_number_of_travels_to("美國")
+```
+
+```{r china_travel}
+plot_number_of_travels_to("中國大陸")
+```
+
+# 官員出訪地為中國的比例
+
+```{r china_central_or_municipal}
+reports_clean %>%
+  count(report_year, central_or_municipal, area) %>%
+  filter(report_year>2000 & report_year<2016) %>%
+  mutate(area_ratio = n/ sum(n)) %>%
+  filter(area=="中國大陸") %>%
+  ggplot(aes(
+    x=report_year,
+    y=area_ratio,
+    color=central_or_municipal)) +
+  geom_point() +
+  geom_line() +
+  theme(legend.position="bottom")
+```
+
+# 月份的分佈
+
+```{r by_month}
+reports_clean %>%
+  count(start_month) %>%
+  na.omit %>%
+  mutate(start_month=as.factor(start_month)) %>%
+  ggplot(aes(x=start_month, y=n)) +
+  geom_bar(stat="identity")
+```
+
